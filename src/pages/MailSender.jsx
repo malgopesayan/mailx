@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { useCollection } from 'react-firebase-hooks/firestore';
-import { auth, db } from '../firebase'; // Keep 'db' for templates
+import { auth, db } from '../firebase';
 import { collection, doc, getDoc, query, where } from 'firebase/firestore';
 import { Send, Calendar, Upload, Paperclip } from 'lucide-react';
 import DatePicker from 'react-datepicker';
@@ -10,7 +10,9 @@ import toast from 'react-hot-toast';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import '../quill-dark.css';
-import { scheduleEmailViaBackend } from '../api'; // IMPORT THE BACKEND API FUNCTION
+import { sendInstantEmailViaBackend } from '../api';
+import Papa from 'papaparse';
+import { encrypt } from '../utils/encryption'; // <-- IMPORT THE ENCRYPT FUNCTION
 
 function MailSender() {
   const [user] = useAuthState(auth);
@@ -66,31 +68,44 @@ function MailSender() {
       return toast.error("Please fill all required fields and upload a CSV file.");
     }
     setIsLoading(true);
-    // The toast message is now handled inside the api.js file
-    
-    try {
-      // --- REPLACED LOGIC ---
-      // Instead of calling Firestore/Storage directly, we call our backend API.
-      const emailData = {
-          subject: subject,
-          htmlBody: body,
-          senderEmail: settings.gmail,
-          senderPassword: settings.appPassword, // This is okay for now, but should be handled server-side in production
-          scheduleTime: sendOption === 'later' ? scheduleTime : new Date(),
-      };
-      
-      // The api.js function will handle the FormData creation and request
-      await scheduleEmailViaBackend(emailData, csvFile, attachmentFile);
 
-      // Reset form on success
-      setSubject(''); setBody(''); setCsvFile(null); setAttachmentFile(null); setSendOption('now');
+    Papa.parse(csvFile, {
+      complete: async (results) => {
+        const recipients = results.data.flat().filter(email => email && email.includes('@'));
 
-    } catch (error) {
-      // Error toasts are already handled in api.js
-      console.error("Failed to submit request to backend:", error);
-    } finally {
-      setIsLoading(false);
-    }
+        if (recipients.length === 0) {
+            toast.error("No valid email addresses found in the CSV file.");
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+          // Encrypt the password before sending it to the backend
+          const encryptedPassword = encrypt(settings.appPassword);
+
+          const emailData = {
+              subject: subject,
+              htmlBody: body,
+              senderEmail: settings.gmail,
+              // Send the ENCRYPTED password instead of the plaintext one
+              senderPassword: encryptedPassword, 
+          };
+          
+          await sendInstantEmailViaBackend(emailData, recipients, attachmentFile);
+
+          setSubject(''); setBody(''); setCsvFile(null); setAttachmentFile(null);
+        } catch (error) {
+          console.error("Failed to submit request to backend:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      },
+      error: (error) => {
+        toast.error("Failed to parse CSV file.");
+        console.error("CSV Parsing Error:", error);
+        setIsLoading(false);
+      }
+    });
   };
   
   const FileInput = ({ icon: Icon, title, file, setFile, accept }) => (
@@ -125,7 +140,6 @@ function MailSender() {
         <h2 className="text-xl font-bold text-text-primary mb-1">Mail Sender</h2>
         <p className="text-text-secondary mb-6">Compose and send emails instantly or schedule for later</p>
         <form onSubmit={handleSubmit} className="space-y-6">
-
           <div>
             <label className="text-sm font-medium text-text-secondary mb-2 block">Quick Start with Template</label>
             <select
@@ -140,10 +154,9 @@ function MailSender() {
                 ))}
             </select>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FileInput icon={Upload} title="Recipient Emails (.csv)" file={csvFile} setFile={setCsvFile} accept=".csv" />
-            <FileInput icon={Paperclip} title="File Attachment (Optional)" file={attachmentFile} setFile={attachmentFile ? null : setAttachmentFile} accept=".pdf, image/*" />
+            <FileInput icon={Paperclip} title="File Attachment (Optional)" file={attachmentFile} setFile={setAttachmentFile} accept=".pdf, image/*" />
           </div>
           <div>
             <label className="text-sm font-medium text-text-secondary mb-2 block">Subject</label>
@@ -159,42 +172,8 @@ function MailSender() {
               placeholder="Compose your message..."
             />
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button type="button" onClick={() => setSendOption('now')} className={`p-4 rounded-lg border-2 text-left transition-colors ${sendOption === 'now' ? 'bg-primary-blue/10 border-primary-blue' : 'bg-background border-border-color hover:border-primary-blue/50'}`}>
-                  <div className="flex items-center gap-3">
-                      <Send size={20} className="text-primary-blue"/>
-                      <div>
-                          <p className="font-semibold text-text-primary">Send Instantly</p>
-                          <p className="text-sm text-text-secondary">Deliver now</p>
-                      </div>
-                  </div>
-              </button>
-              <button type="button" onClick={() => setSendOption('later')} className={`p-4 rounded-lg border-2 text-left transition-colors ${sendOption === 'later' ? 'bg-primary-blue/10 border-primary-blue' : 'bg-background border-border-color hover:border-primary-blue/50'}`}>
-                  <div className="flex items-center gap-3">
-                      <Calendar size={20} className="text-pink-400"/>
-                      <div>
-                          <p className="font-semibold text-text-primary">Schedule for Later</p>
-                          <p className="text-sm text-text-secondary">Pick date & time</p>
-                      </div>
-                  </div>
-              </button>
-          </div>
-
-          {sendOption === 'later' && (
-              <div className="bg-background p-4 rounded-lg">
-                  <DatePicker 
-                    selected={scheduleTime} 
-                    onChange={(date) => setScheduleTime(date)} 
-                    showTimeSelect 
-                    dateFormat="MMMM d, yyyy h:mm aa" 
-                    className="w-full bg-background border-none outline-none text-text-primary text-center"
-                    />
-              </div>
-          )}
-
           <button type="submit" disabled={isLoading} className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-blue to-accent-cyan text-white font-bold py-3 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary-blue/20">
-            {isLoading ? 'Processing...' : (sendOption === 'later' ? <><Calendar size={20} /> Schedule Mail</> : <><Send size={20} /> Send Now</>)}
+            {isLoading ? 'Processing...' : <><Send size={20} /> Send Now</>}
           </button>
         </form>
       </div>
