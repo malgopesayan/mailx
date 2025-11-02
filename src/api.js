@@ -2,7 +2,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 // The base URL for your Spring Boot backend.
-const API_BASE_URL = 'https://mailx-backend-latest.onrender.com';
+const API_BASE_URL = 'https://spring-boot-docker-gbri.onrender.com';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
