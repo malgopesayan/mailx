@@ -12,7 +12,7 @@ import 'react-quill/dist/quill.snow.css';
 import '../quill-dark.css';
 import { sendInstantEmailViaBackend } from '../api';
 import Papa from 'papaparse';
-import { encrypt } from '../utils/encryption'; // <-- IMPORT THE ENCRYPT FUNCTION
+import { encrypt } from '../utils/encryption';
 
 function MailSender() {
   const [user] = useAuthState(auth);
@@ -29,7 +29,7 @@ function MailSender() {
   const [templatesSnapshot] = useCollection(templatesQuery);
 
   useEffect(() => {
-    let isMounted = true; 
+    let isMounted = true;
     const fetchSettings = async () => {
       if (user) {
         const docRef = doc(db, 'settings', user.uid);
@@ -48,21 +48,22 @@ function MailSender() {
   const handleTemplateChange = (e) => {
     const templateId = e.target.value;
     if (!templateId) {
-        setSubject('');
-        setBody('');
-        return;
+      setSubject('');
+      setBody('');
+      return;
     }
     const selectedTemplate = templatesSnapshot.docs.find(doc => doc.id === templateId);
     if (selectedTemplate) {
-        setSubject(selectedTemplate.data().subject);
-        setBody(selectedTemplate.data().body);
+      setSubject(selectedTemplate.data().subject);
+      setBody(selectedTemplate.data().body);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!settings || !settings.gmail || !settings.appPassword) {
-      return toast.error("Please configure your credentials in Settings first.");
+      toast.error("Please configure your credentials in the Settings page first.");
+      return;
     }
     if (!user || !csvFile || !subject || !body || body === '<p><br></p>') {
       return toast.error("Please fill all required fields and upload a CSV file.");
@@ -74,26 +75,37 @@ function MailSender() {
         const recipients = results.data.flat().filter(email => email && email.includes('@'));
 
         if (recipients.length === 0) {
-            toast.error("No valid email addresses found in the CSV file.");
-            setIsLoading(false);
-            return;
+          toast.error("No valid email addresses found in the CSV file.");
+          setIsLoading(false);
+          return;
         }
 
         try {
-          // Encrypt the password before sending it to the backend
           const encryptedPassword = encrypt(settings.appPassword);
 
           const emailData = {
-              subject: subject,
-              htmlBody: body,
-              senderEmail: settings.gmail,
-              // Send the ENCRYPTED password instead of the plaintext one
-              senderPassword: encryptedPassword, 
+            subject: subject,
+            htmlBody: body,
+            senderEmail: settings.gmail,
+            senderPassword: encryptedPassword,
           };
           
+          // --- DIAGNOSTIC LOGGING ---
+          // This will print the data to the browser's console.
+          console.log("Sending the following data to the backend:", {
+            senderEmail: emailData.senderEmail,
+            encryptedPasswordLength: emailData.senderPassword.length, // Log length to confirm encryption
+            subject: emailData.subject,
+            recipientCount: recipients.length,
+            hasAttachment: !!attachmentFile,
+          });
+
           await sendInstantEmailViaBackend(emailData, recipients, attachmentFile);
 
-          setSubject(''); setBody(''); setCsvFile(null); setAttachmentFile(null);
+          setSubject('');
+          setBody('');
+          setCsvFile(null);
+          setAttachmentFile(null);
         } catch (error) {
           console.error("Failed to submit request to backend:", error);
         } finally {
@@ -104,10 +116,10 @@ function MailSender() {
         toast.error("Failed to parse CSV file.");
         console.error("CSV Parsing Error:", error);
         setIsLoading(false);
-      }
+      },
     });
   };
-  
+
   const FileInput = ({ icon: Icon, title, file, setFile, accept }) => (
     <div className="bg-background rounded-lg p-4 border border-border-color">
       <label htmlFor={`${title}-upload`} className="cursor-pointer flex items-center space-x-3">
@@ -117,20 +129,20 @@ function MailSender() {
           <p className="text-xs text-text-secondary truncate">{file ? file.name : "No file selected"}</p>
         </div>
         <div className="px-4 py-2 bg-card text-sm font-semibold rounded-md hover:bg-card-hover">
-            Choose File
+          Choose File
         </div>
       </label>
-      <input id={`${title}-upload`} type="file" accept={accept} onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)} className="hidden"/>
+      <input id={`${title}-upload`} type="file" accept={accept} onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)} className="hidden" />
     </div>
   );
 
   const quillModules = {
     toolbar: [
       [{ 'header': [1, 2, false] }],
-      ['bold', 'italic', 'underline','strike', 'blockquote'],
-      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
+      ['bold', 'italic', 'underline', 'strike', 'blockquote'],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }, { 'indent': '-1' }, { 'indent': '+1' }],
       ['link', 'image'],
-      ['clean']
+      ['clean'],
     ],
   };
 
@@ -143,15 +155,15 @@ function MailSender() {
           <div>
             <label className="text-sm font-medium text-text-secondary mb-2 block">Quick Start with Template</label>
             <select
-                onChange={handleTemplateChange}
-                className="w-full bg-background border border-border-color rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-blue outline-none text-text-primary"
+              onChange={handleTemplateChange}
+              className="w-full bg-background border border-border-color rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-blue outline-none text-text-primary"
             >
-                <option value="">Select a template...</option>
-                {templatesSnapshot?.docs.map(doc => (
-                    <option key={doc.id} value={doc.id}>
-                        {doc.data().subject}
-                    </option>
-                ))}
+              <option value="">Select a template...</option>
+              {templatesSnapshot?.docs.map(doc => (
+                <option key={doc.id} value={doc.id}>
+                  {doc.data().subject}
+                </option>
+              ))}
             </select>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -164,9 +176,9 @@ function MailSender() {
           </div>
           <div>
             <label className="text-sm font-medium text-text-secondary mb-2 block">Message Body</label>
-            <ReactQuill 
-              theme="snow" 
-              value={body} 
+            <ReactQuill
+              theme="snow"
+              value={body}
               onChange={setBody}
               modules={quillModules}
               placeholder="Compose your message..."
